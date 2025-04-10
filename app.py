@@ -109,11 +109,9 @@ def plot_stock_chart(ticker):
     st.pyplot(fig)
 
 def clean_response(text):
-    text = re.sub(r"[\*_`$]", "", text)
-    text = re.sub(r"
-{3,}", "
-
-", text)
+    import re
+    text = re.sub(r"[\\*_`$]", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 ticker = st.text_input("Enter a stock symbol (e.g., AAPL, TSLA)")
