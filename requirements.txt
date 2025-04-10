@@ -1,5 +1,5 @@
-streamlit
-openai
-yfinance
-requests
+scikit-learn
+pandas
+numpy
 matplotlib
+yfinance

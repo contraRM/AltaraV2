@@ -5,6 +5,10 @@ from openai import OpenAI
 import matplotlib.pyplot as plt
 import time
 import re
+import numpy as np
+import pandas as pd
+from datetime import timedelta
+from sklearn.linear_model import LinearRegression
 
 # Initialize OpenAI client
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -104,37 +108,33 @@ def plot_stock_chart(ticker):
     ax.legend()
     st.pyplot(fig)
 
-# Watchlist UI
-st.markdown("### 🔍 Add a Stock to Watchlist")
-new_ticker = st.text_input("Enter a stock symbol (e.g., AAPL, TSLA)")
-if st.button("➕ Add to Watchlist"):
-    if new_ticker and new_ticker.upper() not in st.session_state.watchlist:
-        st.session_state.watchlist.append(new_ticker.upper())
+def plot_forecast_chart(ticker):
+    stock = yf.Ticker(ticker)
+    hist = stock.history(period="1mo").reset_index()
+    hist = hist[['Date', 'Close']].dropna()
+    hist['Days'] = (hist['Date'] - hist['Date'].min()).dt.days
+    X = hist[['Days']]
+    y = hist['Close']
+    model = LinearRegression()
+    model.fit(X, y)
+    last_day = hist['Days'].max()
+    future_days = np.arange(last_day + 1, last_day + 8).reshape(-1, 1)
+    future_dates = [hist['Date'].max() + timedelta(days=i) for i in range(1, 8)]
+    forecast = model.predict(future_days)
+    fig, ax = plt.subplots()
+    ax.plot(hist['Date'], y, label="Historical Close", linewidth=2)
+    ax.plot(future_dates, forecast, label="Forecast (7d)", linestyle="--", color='orange')
+    ax.set_title(f"{ticker} - Next 7-Day Forecast")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Price (USD)")
+    ax.grid(True)
+    ax.legend()
+    st.pyplot(fig)
 
-st.markdown("### 📋 Your Watchlist")
-if st.session_state.watchlist:
-    for ticker in st.session_state.watchlist:
-        col1, col2, col3 = st.columns([2, 2, 1])
-        try:
-            stock = yf.Ticker(ticker)
-            price = stock.info.get("currentPrice", "N/A")
-            change = stock.history(period="2d")["Close"].pct_change().dropna()
-            pct_change = round(change.iloc[-1] * 100, 2) if not change.empty else "N/A"
-        except:
-            price = "N/A"
-            pct_change = "N/A"
-        col1.markdown(f"**{ticker}**")
-        col2.markdown(f"${price} ({pct_change}%)")
-        if col3.button("❌ Remove", key=f"remove_{ticker}"):
-            st.session_state.watchlist.remove(ticker)
-            st.experimental_rerun()
-else:
-    st.markdown("Your watchlist is empty.")
-
-# Stock Analysis Section
-st.markdown("---")
+# Interface
 st.markdown("### 📈 Analyze a Stock")
-ticker = st.text_input("Enter a stock to analyze")
+ticker = st.text_input("Enter a stock symbol (e.g., AAPL, TSLA)")
+
 if st.button("Analyze"):
     if ticker:
         with st.spinner("Analyzing with Altara AI..."):
@@ -149,10 +149,11 @@ if st.button("Analyze"):
         styled_result = styled_result.replace("Recommendation:", "**<span style='color:#1E40AF;'>Recommendation:</span>**")
 
         st.success("✅ AI Analysis Complete")
+
         col1, col2 = st.columns([1, 2])
 
         with col1:
-            st.markdown("### 🧠 Altara Recommendation")
+            st.markdown("### 💰 Altara Recommendation")
             st.markdown(styled_result, unsafe_allow_html=True)
             with st.expander("📰 View Recent Headlines"):
                 for headline in get_news(ticker):
@@ -161,5 +162,8 @@ if st.button("Analyze"):
         with col2:
             st.markdown("### 📊 Stock Chart with Moving Averages")
             plot_stock_chart(ticker)
+
+            st.markdown("### 🔮 Forecast: Next 7 Days")
+            plot_forecast_chart(ticker)
     else:
         st.warning("Please enter a valid stock symbol.")
