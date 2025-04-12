@@ -4,45 +4,45 @@ import requests
 from openai import OpenAI
 import matplotlib.pyplot as plt
 import pandas as pd
-import numpy as np
-import statsmodels.api as sm
-from datetime import timedelta
 import time
 import re
 from matplotlib.dates import DateFormatter
 
-# Config
+# Streamlit config
 st.set_page_config(page_title="Altara", page_icon="📈", layout="wide")
+
+# API keys
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 FINNHUB_KEY = st.secrets["FINNHUB_API_KEY"]
 NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
 ASSISTANT_ID = st.secrets["ASSISTANT_ID"]
 
-# Styling (Premium Altara Theme)
+# --- CSS Theme ---
 st.markdown("""
 <style>
 html, body, [class*="css"] {
-    background-color: #F5F7FA;
-    color: #1E293B;
+    background-color: #0D1117;
+    color: #E5E7EB;
     font-family: 'Segoe UI', sans-serif;
 }
 .card {
-    background-color: #FFFFFF;
+    background-color: #1C1C1E;
     padding: 1.5rem;
     border-radius: 1rem;
     margin-bottom: 1.5rem;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    box-shadow: 0 4px 12px rgba(255, 215, 0, 0.1);
+    border-left: 4px solid #FACC15;
 }
 .header-title {
     text-align: center;
-    color: #1E40AF;
+    color: #3B82F6;
     font-size: 3rem;
     margin-bottom: 0;
 }
 .subtext {
     text-align: center;
     font-size: 1.1rem;
-    color: #64748B;
+    color: #8B949E;
     margin-bottom: 2rem;
 }
 </style>
@@ -52,7 +52,7 @@ st.markdown("<h1 class='header-title'>Altara</h1>", unsafe_allow_html=True)
 st.markdown("<p class='subtext'>AI-Powered Investment Insights</p>", unsafe_allow_html=True)
 st.markdown("---")
 
-# Helper Functions
+# --- Helper Functions ---
 def get_finnhub(endpoint, params=None):
     url = f"https://finnhub.io/api/v1/{endpoint}"
     params = params or {}
@@ -96,8 +96,7 @@ def ask_assistant(prompt):
             return "⚠️ Assistant failed."
         time.sleep(1)
     msg = client.beta.threads.messages.list(thread_id=thread.id).data[0]
-    content = msg.content[0].text.value
-    return re.sub(r"[\\*_`]", "", content).strip()
+    return re.sub(r"[\\*_`]", "", msg.content[0].text.value).strip()
 
 def tech_chart(hist):
     hist["MA7"] = hist["Close"].rolling(7).mean()
@@ -106,15 +105,19 @@ def tech_chart(hist):
     ax.plot(hist.index, hist["Close"], label="Close", linewidth=2)
     ax.plot(hist.index, hist["MA7"], label="7D MA", linestyle="--")
     ax.plot(hist.index, hist["MA30"], label="30D MA", linestyle=":")
-    ax.set_title("📊 Technical Chart")
+    ax.set_title("📊 Technical Chart", color="white")
     ax.grid(True)
     ax.legend()
     ax.xaxis.set_major_formatter(DateFormatter("%b %d"))
+    fig.patch.set_facecolor("#0D1117")
+    ax.set_facecolor("#0D1117")
+    ax.tick_params(colors="white")
+    ax.title.set_color("white")
     st.pyplot(fig)
 
 def summary_panel(info):
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.markdown("### 📋 Stock Summary")
+    st.markdown("### 📋 <span style='color:#FACC15'>Stock Summary</span>", unsafe_allow_html=True)
     cols = st.columns(2)
     cols[0].markdown(f"- **Price:** ${info.get('currentPrice','N/A')}")
     cols[0].markdown(f"- **Volume:** {info.get('volume','N/A')}")
@@ -124,7 +127,7 @@ def summary_panel(info):
     cols[1].markdown(f"- **52W Low:** ${info.get('fiftyTwoWeekLow','N/A')}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# UI
+# --- Interface ---
 st.markdown("### 📈 Analyze a Stock")
 ticker = st.text_input("Enter Stock Symbol (e.g., AAPL)").upper()
 
@@ -160,12 +163,13 @@ Sentiment: {sentiment}
 News:
 - {'\\n- '.join(news)}
 """
+
         with st.spinner("🧠 Generating AI Insights..."):
             response = ask_assistant(prompt)
 
         summary_panel(info)
 
-        st.markdown(f"<div class='card'><h4>💬 Altara Recommendation</h4><p>{response}</p></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='card'><h4 style='color:#FACC15;'>💬 Altara Recommendation</h4><p>{response}</p></div>", unsafe_allow_html=True)
 
         with st.expander("📊 View Technical Chart"):
             tech_chart(hist)
