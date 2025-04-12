@@ -17,28 +17,56 @@ FINNHUB_KEY = st.secrets["FINNHUB_API_KEY"]
 NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
 ASSISTANT_ID = st.secrets["ASSISTANT_ID"]
 
-# Header
-st.markdown("""
-<div style='text-align: center; padding: 20px 0;'>
-  <h1 style='color:#1E40AF; font-size: 3em;'>Altara</h1>
-  <p style='color:#334155;'>AI-Powered Investment Insights</p>
-</div>
+# Theme toggle
+mode = st.sidebar.radio("🎨 Theme", ["Dark Mode", "Light Mode"])
+bg = "#0F172A" if mode == "Dark Mode" else "#FFFFFF"
+card = "#1E293B" if mode == "Dark Mode" else "#F1F5F9"
+text = "#F8FAFC" if mode == "Dark Mode" else "#1E293B"
+
+st.markdown(f"""
+<style>
+html, body, [class*="css"] {{
+    background-color: {bg};
+    color: {text};
+    font-family: 'Segoe UI', sans-serif;
+}}
+.card {{
+    background-color: {card};
+    padding: 1.5rem;
+    border-radius: 1rem;
+    margin-bottom: 1.5rem;
+}}
+.header-title {{
+    text-align: center;
+    color: #1E40AF;
+    font-size: 3rem;
+    margin-bottom: 0;
+}}
+.subtext {{
+    text-align: center;
+    font-size: 1.1rem;
+    color: #94A3B8;
+    margin-bottom: 2rem;
+}}
+</style>
 """, unsafe_allow_html=True)
+
+st.markdown("<h1 class='header-title'>Altara</h1>", unsafe_allow_html=True)
+st.markdown("<p class='subtext'>AI-Powered Investment Insights</p>", unsafe_allow_html=True)
 st.markdown("---")
 
-# Helper functions
+# Helpers
 def get_finnhub(endpoint, params=None):
     url = f"https://finnhub.io/api/v1/{endpoint}"
     params = params or {}
     params["token"] = FINNHUB_KEY
-    res = requests.get(url, params=params)
-    return res.json()
+    return requests.get(url, params=params).json()
 
 def get_analyst_rating(ticker):
     data = get_finnhub("stock/recommendation", {"symbol": ticker})
     if not data: return "No analyst ratings available."
     latest = data[0]
-    return f"Buy: {latest['buy']}, Hold: {latest['hold']}, Sell: {latest['sell']} (Updated {latest['period']})"
+    return f"Buy: {latest['buy']}, Hold: {latest['hold']}, Sell: {latest['sell']} (as of {latest['period']})"
 
 def get_insider_activity(ticker):
     data = get_finnhub("stock/insider-transactions", {"symbol": ticker})
@@ -52,18 +80,12 @@ def get_insider_activity(ticker):
 def get_sentiment(ticker):
     data = get_finnhub("news-sentiment", {"symbol": ticker})
     score = data.get("companyNewsScore")
-    if score is None: return "No sentiment data available."
-    return f"News Sentiment Score: {round(score, 2)} (scale: 0–1)"
+    return f"News Sentiment Score: {round(score, 2)} (scale: 0–1)" if score else "No sentiment data available."
 
 def get_news(ticker):
     url = f"https://newsapi.org/v2/everything?q={ticker}&sortBy=publishedAt&language=en&apiKey={NEWS_API_KEY}"
-    res = requests.get(url)
-    articles = res.json().get("articles", [])
+    articles = requests.get(url).json().get("articles", [])
     return [a["title"] for a in articles[:5]]
-
-def clean_response(text):
-    text = re.sub(r"[\\*_`$]", "", text)
-    return text.strip()
 
 def ask_assistant(prompt):
     thread = client.beta.threads.create()
@@ -71,28 +93,13 @@ def ask_assistant(prompt):
     run = client.beta.threads.runs.create(thread_id=thread.id, assistant_id=ASSISTANT_ID)
     while True:
         status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id).status
-        if status == "completed":
-            break
+        if status == "completed": break
         elif status in ["failed", "cancelled", "expired"]:
             return "⚠️ Assistant failed."
         time.sleep(1)
     msg = client.beta.threads.messages.list(thread_id=thread.id).data[0]
-    return msg.content[0].text.value
+    return msg.content[0].text.value.strip()
 
-# Forecast chart
-def forecast_chart(hist, days):
-    model = sm.tsa.ExponentialSmoothing(hist["Close"], trend='add').fit()
-    forecast = model.forecast(days)
-    future_dates = [hist.index[-1] + timedelta(days=i+1) for i in range(days)]
-    fig, ax = plt.subplots()
-    ax.plot(hist.index, hist["Close"], label="History", linewidth=2)
-    ax.plot(future_dates, forecast, label=f"{days}-Day Forecast", linestyle="--", color="orange")
-    ax.set_title("🔮 Forecast")
-    ax.grid(True)
-    ax.legend()
-    st.pyplot(fig)
-
-# Technical chart
 def tech_chart(hist):
     hist["MA7"] = hist["Close"].rolling(7).mean()
     hist["MA30"] = hist["Close"].rolling(30).mean()
@@ -105,69 +112,76 @@ def tech_chart(hist):
     ax.legend()
     st.pyplot(fig)
 
-# Input panel
-st.markdown("### 📈 Analyze a Stock")
-ticker = st.text_input("Enter Ticker (e.g., AAPL)").upper()
-col_risk, col_days = st.columns(2)
-risk = col_risk.selectbox("Risk Profile", ["Conservative", "Moderate", "Aggressive"])
-forecast_days = col_days.slider("Forecast Horizon (Days)", 7, 30, 7)
+def forecast_chart(hist, days):
+    model = sm.tsa.ExponentialSmoothing(hist["Close"], trend='add').fit()
+    forecast = model.forecast(days)
+    future = [hist.index[-1] + timedelta(days=i+1) for i in range(days)]
+    fig, ax = plt.subplots()
+    ax.plot(hist.index, hist["Close"], label="History", linewidth=2)
+    ax.plot(future, forecast, label=f"{days}-Day Forecast", linestyle="--", color="orange")
+    ax.set_title("🔮 Forecast")
+    ax.grid(True)
+    ax.legend()
+    st.pyplot(fig)
 
-if st.button("Analyze") and ticker:
+# Main app
+st.markdown("### 📈 Analyze a Stock")
+ticker = st.text_input("Enter Stock Symbol (e.g., AAPL)").upper()
+col1, col2 = st.columns(2)
+risk_level = col1.selectbox("Risk Tolerance", ["Conservative", "Moderate", "Aggressive"])
+forecast_days = col2.slider("Forecast Days", 7, 30, 7)
+
+if st.button("Run Analysis") and ticker:
     stock = yf.Ticker(ticker)
     hist = stock.history(period="2mo")
     if hist.empty:
         st.error("Invalid ticker or no data.")
     else:
-        # Gather data
-        headlines = get_news(ticker)
+        info = stock.info
+        price = info.get("currentPrice", "N/A")
+        volume = info.get("volume", "N/A")
+        market_cap = info.get("marketCap", "N/A")
+        high = info.get("fiftyTwoWeekHigh", "N/A")
+        low = info.get("fiftyTwoWeekLow", "N/A")
+        ma7 = hist["Close"].rolling(7).mean().dropna().iloc[-1]
+        ma30 = hist["Close"].rolling(30).mean().dropna().iloc[-1]
+        pct = round(((hist["Close"].iloc[-1] - hist["Close"].iloc[-7]) / hist["Close"].iloc[-7]) * 100, 2)
+
         rating = get_analyst_rating(ticker)
         insider = get_insider_activity(ticker)
         sentiment = get_sentiment(ticker)
-        info = stock.info
-
-        price = info.get("currentPrice", "N/A")
-        volume = info.get("volume", "N/A")
-        high = info.get("fiftyTwoWeekHigh", "N/A")
-        low = info.get("fiftyTwoWeekLow", "N/A")
-        market_cap = info.get("marketCap", "N/A")
-
-        ma7 = hist["Close"].rolling(7).mean().dropna().iloc[-1]
-        ma30 = hist["Close"].rolling(30).mean().dropna().iloc[-1]
-        pct_change = round(((hist["Close"].iloc[-1] - hist["Close"].iloc[-7]) / hist["Close"].iloc[-7]) * 100, 2)
+        news = get_news(ticker)
 
         prompt = f"""
-Analyze the following stock:
+Analyze this stock:
 
 Ticker: {ticker}
-Current Price: ${price}
+Price: ${price}
 Volume: {volume}
 Market Cap: {market_cap}
 52W High/Low: ${high} / ${low}
-7D MA: {ma7:.2f}
-30D MA: {ma30:.2f}
-7D Change: {pct_change}%
-Risk Profile: {risk}
-Analyst Rating: {rating}
+7D MA: {ma7:.2f}, 30D MA: {ma30:.2f}
+7D Change: {pct}%
+Risk: {risk_level}
+Analyst Ratings: {rating}
 Insider Activity: {insider}
 Sentiment: {sentiment}
 News:
-- {'\\n- '.join(headlines)}
+- {'\\n- '.join(news)}
 """
-
-        with st.spinner("Analyzing with Altara AI..."):
+        with st.spinner("🧠 Generating AI Insights..."):
             response = ask_assistant(prompt)
-            st.success("✅ Analysis Complete")
 
-        # Display
-        col1, col2 = st.columns([1, 2])
-
-        with col1:
-            st.markdown("### 💬 Altara Recommendation")
-            st.markdown(clean_response(response), unsafe_allow_html=True)
-            with st.expander("📰 News Headlines"):
-                for h in headlines:
+        a, b = st.columns([1, 2])
+        with a:
+            st.markdown(f"<div class='card'><h4>💬 Altara Recommendation</h4><p>{response}</p></div>", unsafe_allow_html=True)
+            with st.expander("🗞️ Recent Headlines"):
+                for h in news:
                     st.markdown(f"- {h}")
-
-        with col2:
+        with b:
+            st.markdown("<div class='card'>", unsafe_allow_html=True)
             tech_chart(hist)
+            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("<div class='card'>", unsafe_allow_html=True)
             forecast_chart(hist, forecast_days)
+            st.markdown("</div>", unsafe_allow_html=True)
