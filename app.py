@@ -9,20 +9,27 @@ import statsmodels.api as sm
 from datetime import timedelta
 import time
 import re
+from matplotlib.dates import DateFormatter
 
-# Setup
+# Config
 st.set_page_config(page_title="Altara", page_icon="📈", layout="wide")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 FINNHUB_KEY = st.secrets["FINNHUB_API_KEY"]
 NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
 ASSISTANT_ID = st.secrets["ASSISTANT_ID"]
 
-# Theme toggle
-mode = st.sidebar.radio("🎨 Theme", ["Dark Mode", "Light Mode"])
-bg = "#0F172A" if mode == "Dark Mode" else "#FFFFFF"
-card = "#1E293B" if mode == "Dark Mode" else "#F1F5F9"
-text = "#F8FAFC" if mode == "Dark Mode" else "#1E293B"
+# Theme toggle using session state
+if "theme" not in st.session_state:
+    st.session_state["theme"] = "Dark"
 
+mode = st.sidebar.radio("🎨 Theme", ["Dark", "Light"], index=0 if st.session_state["theme"] == "Dark" else 1)
+st.session_state["theme"] = mode
+dark = mode == "Dark"
+bg = "#0F172A" if dark else "#FFFFFF"
+card = "#1E293B" if dark else "#F1F5F9"
+text = "#F8FAFC" if dark else "#1E293B"
+
+# Custom CSS
 st.markdown(f"""
 <style>
 html, body, [class*="css"] {{
@@ -55,7 +62,7 @@ st.markdown("<h1 class='header-title'>Altara</h1>", unsafe_allow_html=True)
 st.markdown("<p class='subtext'>AI-Powered Investment Insights</p>", unsafe_allow_html=True)
 st.markdown("---")
 
-# Helpers
+# Helper functions
 def get_finnhub(endpoint, params=None):
     url = f"https://finnhub.io/api/v1/{endpoint}"
     params = params or {}
@@ -103,33 +110,31 @@ def ask_assistant(prompt):
 def tech_chart(hist):
     hist["MA7"] = hist["Close"].rolling(7).mean()
     hist["MA30"] = hist["Close"].rolling(30).mean()
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(7, 4))
     ax.plot(hist.index, hist["Close"], label="Close", linewidth=2)
     ax.plot(hist.index, hist["MA7"], label="7D MA", linestyle="--")
     ax.plot(hist.index, hist["MA30"], label="30D MA", linestyle=":")
     ax.set_title("📊 Technical Chart")
     ax.grid(True)
     ax.legend()
+    ax.xaxis.set_major_formatter(DateFormatter("%b %d"))
     st.pyplot(fig)
 
-def forecast_chart(hist, days):
-    model = sm.tsa.ExponentialSmoothing(hist["Close"], trend='add').fit()
-    forecast = model.forecast(days)
-    future = [hist.index[-1] + timedelta(days=i+1) for i in range(days)]
-    fig, ax = plt.subplots()
-    ax.plot(hist.index, hist["Close"], label="History", linewidth=2)
-    ax.plot(future, forecast, label=f"{days}-Day Forecast", linestyle="--", color="orange")
-    ax.set_title("🔮 Forecast")
-    ax.grid(True)
-    ax.legend()
-    st.pyplot(fig)
+def summary_panel(info):
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    st.markdown("### 📋 Stock Summary")
+    cols = st.columns(2)
+    cols[0].markdown(f"- **Price:** ${info.get('currentPrice','N/A')}")
+    cols[0].markdown(f"- **Volume:** {info.get('volume','N/A')}")
+    cols[0].markdown(f"- **P/E Ratio:** {info.get('trailingPE','N/A')}")
+    cols[0].markdown(f"- **Market Cap:** {info.get('marketCap','N/A')}")
+    cols[1].markdown(f"- **52W High:** ${info.get('fiftyTwoWeekHigh','N/A')}")
+    cols[1].markdown(f"- **52W Low:** ${info.get('fiftyTwoWeekLow','N/A')}")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# Main app
+# Interface
 st.markdown("### 📈 Analyze a Stock")
 ticker = st.text_input("Enter Stock Symbol (e.g., AAPL)").upper()
-col1, col2 = st.columns(2)
-risk_level = col1.selectbox("Risk Tolerance", ["Conservative", "Moderate", "Aggressive"])
-forecast_days = col2.slider("Forecast Days", 7, 30, 7)
 
 if st.button("Run Analysis") and ticker:
     stock = yf.Ticker(ticker)
@@ -138,11 +143,6 @@ if st.button("Run Analysis") and ticker:
         st.error("Invalid ticker or no data.")
     else:
         info = stock.info
-        price = info.get("currentPrice", "N/A")
-        volume = info.get("volume", "N/A")
-        market_cap = info.get("marketCap", "N/A")
-        high = info.get("fiftyTwoWeekHigh", "N/A")
-        low = info.get("fiftyTwoWeekLow", "N/A")
         ma7 = hist["Close"].rolling(7).mean().dropna().iloc[-1]
         ma30 = hist["Close"].rolling(30).mean().dropna().iloc[-1]
         pct = round(((hist["Close"].iloc[-1] - hist["Close"].iloc[-7]) / hist["Close"].iloc[-7]) * 100, 2)
@@ -156,13 +156,12 @@ if st.button("Run Analysis") and ticker:
 Analyze this stock:
 
 Ticker: {ticker}
-Price: ${price}
-Volume: {volume}
-Market Cap: {market_cap}
-52W High/Low: ${high} / ${low}
+Price: ${info.get("currentPrice","N/A")}
+Volume: {info.get("volume","N/A")}
+Market Cap: {info.get("marketCap","N/A")}
+52W High/Low: ${info.get("fiftyTwoWeekHigh","N/A")} / ${info.get("fiftyTwoWeekLow","N/A")}
 7D MA: {ma7:.2f}, 30D MA: {ma30:.2f}
 7D Change: {pct}%
-Risk: {risk_level}
 Analyst Ratings: {rating}
 Insider Activity: {insider}
 Sentiment: {sentiment}
@@ -172,16 +171,13 @@ News:
         with st.spinner("🧠 Generating AI Insights..."):
             response = ask_assistant(prompt)
 
-        a, b = st.columns([1, 2])
-        with a:
-            st.markdown(f"<div class='card'><h4>💬 Altara Recommendation</h4><p>{response}</p></div>", unsafe_allow_html=True)
-            with st.expander("🗞️ Recent Headlines"):
-                for h in news:
-                    st.markdown(f"- {h}")
-        with b:
-            st.markdown("<div class='card'>", unsafe_allow_html=True)
+        summary_panel(info)
+
+        st.markdown(f"<div class='card'><h4>💬 Altara Recommendation</h4><p>{response}</p></div>", unsafe_allow_html=True)
+
+        with st.expander("📊 View Technical Chart"):
             tech_chart(hist)
-            st.markdown("</div>", unsafe_allow_html=True)
-            st.markdown("<div class='card'>", unsafe_allow_html=True)
-            forecast_chart(hist, forecast_days)
-            st.markdown("</div>", unsafe_allow_html=True)
+
+        with st.expander("🗞️ View Recent Headlines"):
+            for h in news:
+                st.markdown(f"- {h}")
