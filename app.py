@@ -9,7 +9,7 @@ import re
 from matplotlib.dates import DateFormatter
 
 # Streamlit config
-st.set_page_config(page_title="Altara", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Altara Beta", page_icon="📈", layout="wide")
 
 # API keys
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
