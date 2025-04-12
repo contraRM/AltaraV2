@@ -17,7 +17,7 @@ FINNHUB_KEY = st.secrets["FINNHUB_API_KEY"]
 NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
 ASSISTANT_ID = st.secrets["ASSISTANT_ID"]
 
-# --- CSS Theme ---
+# --- Modern Premium CSS ---
 st.markdown("""
 <style>
 html, body, [class*="css"] {
@@ -25,19 +25,15 @@ html, body, [class*="css"] {
     color: #E5E7EB;
     font-family: 'Segoe UI', sans-serif;
 }
-.card {
-    background-color: #1C1C1E;
+.section {
+    background-color: #1A1C20;
     padding: 1.5rem;
     border-radius: 1rem;
-    margin-bottom: 1.5rem;
-    box-shadow: 0 4px 12px rgba(255, 215, 0, 0.1);
-    border-left: 4px solid #FACC15;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 12px rgba(255, 215, 0, 0.05);
 }
-.header-title {
-    text-align: center;
-    color: #3B82F6;
-    font-size: 3rem;
-    margin-bottom: 0;
+h1, h2, h3, h4 {
+    color: #FFD369;
 }
 .subtext {
     text-align: center;
@@ -45,12 +41,15 @@ html, body, [class*="css"] {
     color: #8B949E;
     margin-bottom: 2rem;
 }
+input, textarea, .stTextInput > div > div > input {
+    background-color: #161B22;
+    color: white;
+}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1 class='header-title'>Altara</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:center;'>Altara</h1>", unsafe_allow_html=True)
 st.markdown("<p class='subtext'>AI-Powered Investment Insights</p>", unsafe_allow_html=True)
-st.markdown("---")
 
 # --- Helper Functions ---
 def get_finnhub(endpoint, params=None):
@@ -116,8 +115,8 @@ def tech_chart(hist):
     st.pyplot(fig)
 
 def summary_panel(info):
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.markdown("### 📋 <span style='color:#FACC15'>Stock Summary</span>", unsafe_allow_html=True)
+    st.markdown("<div class='section'>", unsafe_allow_html=True)
+    st.markdown("### 📋 Stock Summary")
     cols = st.columns(2)
     cols[0].markdown(f"- **Price:** ${info.get('currentPrice','N/A')}")
     cols[0].markdown(f"- **Volume:** {info.get('volume','N/A')}")
@@ -127,10 +126,13 @@ def summary_panel(info):
     cols[1].markdown(f"- **52W Low:** ${info.get('fiftyTwoWeekLow','N/A')}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# --- Interface ---
+# --- UI Input ---
+st.markdown("<div class='section'>", unsafe_allow_html=True)
 st.markdown("### 📈 Analyze a Stock")
 ticker = st.text_input("Enter Stock Symbol (e.g., AAPL)").upper()
+st.markdown("</div>", unsafe_allow_html=True)
 
+# --- On Click ---
 if st.button("Run Analysis") and ticker:
     stock = yf.Ticker(ticker)
     hist = stock.history(period="2mo")
@@ -169,7 +171,10 @@ News:
 
         summary_panel(info)
 
-        st.markdown(f"<div class='card'><h4 style='color:#FACC15;'>💬 Altara Recommendation</h4><p>{response}</p></div>", unsafe_allow_html=True)
+        st.markdown("<div class='section'>", unsafe_allow_html=True)
+        st.markdown("### 💬 Altara Recommendation")
+        st.markdown(response)
+        st.markdown("</div>", unsafe_allow_html=True)
 
         with st.expander("📊 View Technical Chart"):
             tech_chart(hist)
