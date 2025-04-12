@@ -115,7 +115,7 @@ def ask_assistant_with_data(ticker, hist, news):
     )
     headlines = "- " + "\\n- ".join([n[:100] for n in news])
 
-    input_message = f\"\"\"
+    input_message = f"""
 Ticker: {ticker}
 Current Price: ${price}
 Volume: {volume}
@@ -126,7 +126,7 @@ Market Cap: {market_cap}
 52-Week High/Low: ${high} / ${low}
 Recent Headlines:
 {headlines}
-\"\"\"
+"""
     return ask_assistant(input_message)
 
 # === UI ===
