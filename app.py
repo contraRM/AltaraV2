@@ -129,7 +129,7 @@ def summary_panel(info):
 # --- UI Input ---
 st.markdown("<div class='section'>", unsafe_allow_html=True)
 st.markdown("### 📈 Analyze a Stock")
-ticker = st.text_input("Enter Stock Symbol (e.g., AAPL)").upper()
+ticker = st.text_input("Enter Stock Symbol (ex. AAPL, TSLA, VOO)").upper()
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- On Click ---
