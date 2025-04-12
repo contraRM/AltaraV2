@@ -42,11 +42,12 @@ def get_analyst_rating(ticker):
 
 def get_insider_activity(ticker):
     data = get_finnhub("stock/insider-transactions", {"symbol": ticker})
-    if "data" not in data or not data["data"]:
+    txns = data.get("data", [])
+    if not isinstance(txns, list) or not txns:
         return "No insider activity reported."
-    buys = [d for d in data["data"] if d["transactionType"] == "P - Purchase"]
-    sells = [d for d in data["data"] if d["transactionType"] == "S - Sale"]
-    return f"Purchases: {len(buys)}, Sales: {len(sells)} in last 3 months"
+    buys = [d for d in txns if d.get("transactionType") == "P - Purchase"]
+    sells = [d for d in txns if d.get("transactionType") == "S - Sale"]
+    return f"Purchases: {len(buys)}, Sales: {len(sells)} (last 3 months)"
 
 def get_sentiment(ticker):
     data = get_finnhub("news-sentiment", {"symbol": ticker})
