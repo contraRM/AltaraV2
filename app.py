@@ -3,14 +3,14 @@ import yfinance as yf
 import requests
 from openai import OpenAI
 import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+from datetime import timedelta
 import time
 import re
-import numpy as np
-import pandas as pd
-from datetime import timedelta
-from sklearn.linear_model import LinearRegression
+import statsmodels.api as sm
 
-# Initialize OpenAI client
+# === Configuration ===
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
 ASSISTANT_ID = st.secrets["ASSISTANT_ID"]
@@ -25,8 +25,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 st.markdown("---")
 
-if "watchlist" not in st.session_state:
-    st.session_state.watchlist = []
+# === Utility Functions ===
+def clean_response(text):
+    text = re.sub(r"[\\*_`$]", "", text)
+    return text.strip()
 
 def get_news(stock_name):
     url = f"https://newsapi.org/v2/everything?q={stock_name}&sortBy=publishedAt&language=en&apiKey={NEWS_API_KEY}"
@@ -34,136 +36,130 @@ def get_news(stock_name):
     articles = response.json().get("articles", [])[:3]
     return [a["title"] for a in articles]
 
-def clean_response(text):
-    text = re.sub(r"[\*_`$]", "", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
 def ask_assistant(prompt):
     thread = client.beta.threads.create()
     client.beta.threads.messages.create(thread_id=thread.id, role="user", content=prompt)
     run = client.beta.threads.runs.create(thread_id=thread.id, assistant_id=ASSISTANT_ID)
     while True:
-        run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-        if run_status.status == "completed":
+        status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id).status
+        if status == "completed":
             break
-        elif run_status.status in ["failed", "cancelled", "expired"]:
-            st.error(f"⚠️ Assistant run failed with status: {run_status.status}")
+        elif status in ["failed", "cancelled", "expired"]:
             return "⚠️ Assistant failed to generate a response."
         time.sleep(1)
-    messages = client.beta.threads.messages.list(thread_id=thread.id)
-    return messages.data[0].content[0].text.value
+    msg = client.beta.threads.messages.list(thread_id=thread.id).data[0]
+    return msg.content[0].text.value
 
-def build_prompt(ticker):
-    stock = yf.Ticker(ticker)
-    hist = stock.history(period="1mo")
-    price = stock.info.get("currentPrice", "unknown")
-    volume = stock.info.get("volume", "unknown")
-    high = stock.info.get("fiftyTwoWeekHigh", "unknown")
-    low = stock.info.get("fiftyTwoWeekLow", "unknown")
-    cap = stock.info.get("marketCap", "unknown")
+# === Forecast Chart ===
+def plot_forecast_chart(hist):
+    hist = hist.reset_index()
+    hist['Close'] = hist['Close'].fillna(method='ffill')
+    model = sm.tsa.ExponentialSmoothing(hist['Close'], trend='add').fit()
+    forecast = model.forecast(7)
+    future_dates = [hist['Date'].iloc[-1] + timedelta(days=i+1) for i in range(7)]
+
+    fig, ax = plt.subplots()
+    ax.plot(hist['Date'], hist['Close'], label="Historical", linewidth=2)
+    ax.plot(future_dates, forecast, label="7-Day Forecast", linestyle="--", color="orange")
+    ax.set_title("🔮 Next 7-Day Forecast")
+    ax.set_ylabel("Price (USD)")
+    ax.grid(True)
+    ax.legend()
+    st.pyplot(fig)
+
+# === Stock Chart ===
+def plot_stock_chart(hist):
+    hist["MA7"] = hist["Close"].rolling(7).mean()
+    hist["MA30"] = hist["Close"].rolling(30).mean()
+    fig, ax = plt.subplots()
+    ax.plot(hist.index, hist["Close"], label="Close Price", linewidth=2)
+    ax.plot(hist.index, hist["MA7"], label="7-Day MA", linestyle="--")
+    ax.plot(hist.index, hist["MA30"], label="30-Day MA", linestyle=":")
+    ax.set_title("📊 Stock Price & Moving Averages")
+    ax.set_ylabel("Price (USD)")
+    ax.grid(True)
+    ax.legend()
+    st.pyplot(fig)
+
+# === Market Overview ===
+def show_market_overview():
+    st.markdown("## 🌍 Market Overview")
+    symbols = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "META", "JPM"]
+    data = []
+    for s in symbols:
+        stock = yf.Ticker(s)
+        try:
+            hist = stock.history(period="2d")
+            price = hist["Close"].iloc[-1]
+            change = ((hist["Close"].iloc[-1] - hist["Close"].iloc[-2]) / hist["Close"].iloc[-2]) * 100
+            data.append({"Symbol": s, "Price": round(price, 2), "Change (%)": round(change, 2)})
+        except:
+            continue
+    df = pd.DataFrame(data).sort_values("Change (%)", ascending=False)
+    st.dataframe(df, use_container_width=True)
+
+# === Build Prompt ===
+def ask_assistant_with_data(ticker, hist, news):
+    info = yf.Ticker(ticker).info
+    price = info.get("currentPrice", "N/A")
+    volume = info.get("volume", "N/A")
+    market_cap = info.get("marketCap", "N/A")
+    high = info.get("fiftyTwoWeekHigh", "N/A")
+    low = info.get("fiftyTwoWeekLow", "N/A")
+
     ma7 = round(hist["Close"].rolling(7).mean().dropna().iloc[-1], 2) if len(hist) >= 7 else "N/A"
     ma30 = round(hist["Close"].rolling(30).mean().dropna().iloc[-1], 2) if len(hist) >= 30 else "N/A"
     pct_change_7d = (
         round(((hist["Close"].iloc[-1] - hist["Close"].iloc[-7]) / hist["Close"].iloc[-7]) * 100, 2)
         if len(hist) >= 7 else "N/A"
     )
-    news = get_news(ticker)
-    headlines = "- " + "\n- ".join([n[:100] for n in news[:3]])
-    return f"""
-You are a financial analyst generating a stock report.
+    headlines = "- " + "\\n- ".join([n[:100] for n in news])
 
+    input_message = f\"\"\"
 Ticker: {ticker}
 Current Price: ${price}
-7-Day Moving Avg: {ma7}
-30-Day Moving Avg: {ma30}
+Volume: {volume}
+Market Cap: {market_cap}
+7-Day MA: {ma7}
+30-Day MA: {ma30}
 7-Day % Change: {pct_change_7d}%
 52-Week High/Low: ${high} / ${low}
-Volume: {volume}
-Market Cap: {cap}
-
 Recent Headlines:
 {headlines}
+\"\"\"
+    return ask_assistant(input_message)
 
-Based on this data, provide:
-- An overall sentiment (bullish, bearish, neutral)
-- Technical interpretation (MA, trend)
-- Brief interpretation of the news sentiment
-- A Buy, Sell, or Hold recommendation with reasoning
-"""
+# === UI ===
+st.markdown("## 📈 Analyze a Stock")
+ticker = st.text_input("Enter a stock symbol (e.g., AAPL)").upper()
 
-def plot_stock_chart(ticker):
-    stock = yf.Ticker(ticker)
-    hist = stock.history(period="1mo")
-    hist["MA7"] = hist["Close"].rolling(window=7).mean()
-    hist["MA30"] = hist["Close"].rolling(window=30).mean()
-    fig, ax = plt.subplots()
-    ax.plot(hist.index, hist["Close"], label="Close Price", linewidth=2)
-    ax.plot(hist.index, hist["MA7"], label="7-Day MA", linestyle="--")
-    ax.plot(hist.index, hist["MA30"], label="30-Day MA", linestyle=":")
-    ax.set_title(f"{ticker} - Price & Moving Averages")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Price (USD)")
-    ax.grid(True)
-    ax.legend()
-    st.pyplot(fig)
+if st.button("Analyze") and ticker:
+    with st.spinner("Analyzing..."):
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period="1mo")
+        if hist.empty:
+            st.warning("No historical data available for this ticker.")
+        else:
+            news = get_news(ticker)
+            response = ask_assistant_with_data(ticker, hist, news)
 
-def plot_forecast_chart(ticker):
-    stock = yf.Ticker(ticker)
-    hist = stock.history(period="1mo").reset_index()
-    hist = hist[['Date', 'Close']].dropna()
-    hist['Days'] = (hist['Date'] - hist['Date'].min()).dt.days
-    X = hist[['Days']]
-    y = hist['Close']
-    model = LinearRegression()
-    model.fit(X, y)
-    last_day = hist['Days'].max()
-    future_days = np.arange(last_day + 1, last_day + 8).reshape(-1, 1)
-    future_dates = [hist['Date'].max() + timedelta(days=i) for i in range(1, 8)]
-    forecast = model.predict(future_days)
-    fig, ax = plt.subplots()
-    ax.plot(hist['Date'], y, label="Historical Close", linewidth=2)
-    ax.plot(future_dates, forecast, label="Forecast (7d)", linestyle="--", color='orange')
-    ax.set_title(f"{ticker} - Next 7-Day Forecast")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Price (USD)")
-    ax.grid(True)
-    ax.legend()
-    st.pyplot(fig)
+            col1, col2 = st.columns([1, 2])
 
-# Interface
-st.markdown("### 📈 Analyze a Stock")
-ticker = st.text_input("Enter a stock symbol (e.g., AAPL, TSLA)")
+            with col1:
+                st.markdown("### 💬 Altara Recommendation")
+                response = clean_response(response)
+                response = response.replace("Overall Sentiment:", "**<span style='color:#1E40AF;'>Overall Sentiment:</span>**")
+                response = response.replace("Technical Analysis:", "**<span style='color:#1E40AF;'>Technical Analysis:</span>**")
+                response = response.replace("News Sentiment Overview:", "**<span style='color:#1E40AF;'>News Sentiment Overview:</span>**")
+                response = response.replace("Recommendation:", "**<span style='color:#1E40AF;'>Recommendation:</span>**")
+                st.markdown(response, unsafe_allow_html=True)
+                with st.expander("📰 News Headlines"):
+                    for h in news:
+                        st.markdown(f"- {h}")
 
-if st.button("Analyze"):
-    if ticker:
-        with st.spinner("Analyzing with Altara AI..."):
-            prompt = build_prompt(ticker)
-            result = ask_assistant(prompt)
+            with col2:
+                plot_stock_chart(hist)
+                plot_forecast_chart(hist)
 
-        cleaned_result = clean_response(result)
-        styled_result = cleaned_result
-        styled_result = styled_result.replace("Overall Sentiment:", "**<span style='color:#1E40AF;'>Overall Sentiment:</span>**")
-        styled_result = styled_result.replace("Technical Interpretation:", "**<span style='color:#1E40AF;'>Technical Interpretation:</span>**")
-        styled_result = styled_result.replace("News Sentiment:", "**<span style='color:#1E40AF;'>News Sentiment:</span>**")
-        styled_result = styled_result.replace("Recommendation:", "**<span style='color:#1E40AF;'>Recommendation:</span>**")
-
-        st.success("✅ AI Analysis Complete")
-
-        col1, col2 = st.columns([1, 2])
-
-        with col1:
-            st.markdown("### 💰 Altara Recommendation")
-            st.markdown(styled_result, unsafe_allow_html=True)
-            with st.expander("📰 View Recent Headlines"):
-                for headline in get_news(ticker):
-                    st.markdown(f"- {headline}")
-
-        with col2:
-            st.markdown("### 📊 Stock Chart with Moving Averages")
-            plot_stock_chart(ticker)
-
-            st.markdown("### 🔮 Forecast: Next 7 Days")
-            plot_forecast_chart(ticker)
-    else:
-        st.warning("Please enter a valid stock symbol.")
+st.markdown("---")
+show_market_overview()
