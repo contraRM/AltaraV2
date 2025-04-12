@@ -18,43 +18,33 @@ FINNHUB_KEY = st.secrets["FINNHUB_API_KEY"]
 NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
 ASSISTANT_ID = st.secrets["ASSISTANT_ID"]
 
-# Theme toggle using session state
-if "theme" not in st.session_state:
-    st.session_state["theme"] = "Dark"
-
-mode = st.sidebar.radio("🎨 Theme", ["Dark", "Light"], index=0 if st.session_state["theme"] == "Dark" else 1)
-st.session_state["theme"] = mode
-dark = mode == "Dark"
-bg = "#0F172A" if dark else "#FFFFFF"
-card = "#1E293B" if dark else "#F1F5F9"
-text = "#F8FAFC" if dark else "#1E293B"
-
-# Custom CSS
-st.markdown(f"""
+# Styling (Premium Altara Theme)
+st.markdown("""
 <style>
-html, body, [class*="css"] {{
-    background-color: {bg};
-    color: {text};
+html, body, [class*="css"] {
+    background-color: #F5F7FA;
+    color: #1E293B;
     font-family: 'Segoe UI', sans-serif;
-}}
-.card {{
-    background-color: {card};
+}
+.card {
+    background-color: #FFFFFF;
     padding: 1.5rem;
     border-radius: 1rem;
     margin-bottom: 1.5rem;
-}}
-.header-title {{
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+.header-title {
     text-align: center;
     color: #1E40AF;
     font-size: 3rem;
     margin-bottom: 0;
-}}
-.subtext {{
+}
+.subtext {
     text-align: center;
     font-size: 1.1rem;
-    color: #94A3B8;
+    color: #64748B;
     margin-bottom: 2rem;
-}}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -62,7 +52,7 @@ st.markdown("<h1 class='header-title'>Altara</h1>", unsafe_allow_html=True)
 st.markdown("<p class='subtext'>AI-Powered Investment Insights</p>", unsafe_allow_html=True)
 st.markdown("---")
 
-# Helper functions
+# Helper Functions
 def get_finnhub(endpoint, params=None):
     url = f"https://finnhub.io/api/v1/{endpoint}"
     params = params or {}
@@ -90,9 +80,10 @@ def get_sentiment(ticker):
     return f"News Sentiment Score: {round(score, 2)} (scale: 0–1)" if score else "No sentiment data available."
 
 def get_news(ticker):
-    url = f"https://newsapi.org/v2/everything?q={ticker}&sortBy=publishedAt&language=en&apiKey={NEWS_API_KEY}"
+    url = f"https://newsapi.org/v2/everything?q={ticker}&sortBy=publishedAt&language=en&pageSize=10&apiKey={NEWS_API_KEY}"
     articles = requests.get(url).json().get("articles", [])
-    return [a["title"] for a in articles[:5]]
+    relevant = [a["title"] for a in articles if ticker.upper() in a["title"].upper()]
+    return relevant[:5] if relevant else [a["title"] for a in articles[:5]]
 
 def ask_assistant(prompt):
     thread = client.beta.threads.create()
@@ -105,7 +96,8 @@ def ask_assistant(prompt):
             return "⚠️ Assistant failed."
         time.sleep(1)
     msg = client.beta.threads.messages.list(thread_id=thread.id).data[0]
-    return msg.content[0].text.value.strip()
+    content = msg.content[0].text.value
+    return re.sub(r"[\\*_`]", "", content).strip()
 
 def tech_chart(hist):
     hist["MA7"] = hist["Close"].rolling(7).mean()
@@ -132,7 +124,7 @@ def summary_panel(info):
     cols[1].markdown(f"- **52W Low:** ${info.get('fiftyTwoWeekLow','N/A')}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# Interface
+# UI
 st.markdown("### 📈 Analyze a Stock")
 ticker = st.text_input("Enter Stock Symbol (e.g., AAPL)").upper()
 
