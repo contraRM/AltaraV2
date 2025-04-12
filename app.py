@@ -15,7 +15,7 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
 ASSISTANT_ID = st.secrets["ASSISTANT_ID"]
 
-st.set_page_config(page_title="Altara", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Altara Beta Testing", page_icon="📈", layout="wide")
 
 st.markdown("""
     <div style='text-align: center; padding: 20px 0;'>
