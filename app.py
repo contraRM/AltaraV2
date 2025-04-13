@@ -122,7 +122,7 @@ def summary_panel(info):
 # --- UI Input ---
 st.markdown("<div class='section'>", unsafe_allow_html=True)
 st.markdown("### 📈 Analyze a Stock")
-ticker = st.text_input("Enter Stock Symbol (e.g., AAPL)").upper()
+ticker = st.text_input("Enter Stock Symbol (ex. AAPL, TSLA)").upper()
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Main Action ---
@@ -175,7 +175,7 @@ Please provide a structured analysis with these 5 clearly labeled sections (use 
 Each section should be concise, visually readable, and formatted in bullet points where possible.
 """
 
-        with st.spinner("Analyzing with AI..."):
+        with st.spinner("Analyzing with Altara..."):
             response = ask_assistant(prompt)
 
         summary_panel(info)
