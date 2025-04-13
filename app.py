@@ -8,8 +8,7 @@ import time
 import re
 from matplotlib.dates import DateFormatter
 
-# Streamlit config
-st.set_page_config(page_title="Altara Beta", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Altara", page_icon="📈", layout="wide")
 
 # API keys
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -17,7 +16,7 @@ FINNHUB_KEY = st.secrets["FINNHUB_API_KEY"]
 NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
 ASSISTANT_ID = st.secrets["ASSISTANT_ID"]
 
-# --- Modern Premium CSS ---
+# --- Styling ---
 st.markdown("""
 <style>
 html, body, [class*="css"] {
@@ -30,26 +29,20 @@ html, body, [class*="css"] {
     padding: 1.5rem;
     border-radius: 1rem;
     margin-bottom: 2rem;
-    box-shadow: 0 4px 12px rgba(255, 215, 0, 0.05);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
-h1, h2, h3, h4 {
+h3 {
     color: #FFD369;
+    margin-bottom: 1rem;
 }
-.subtext {
-    text-align: center;
-    font-size: 1.1rem;
-    color: #8B949E;
-    margin-bottom: 2rem;
-}
-input, textarea, .stTextInput > div > div > input {
-    background-color: #161B22;
-    color: white;
+hr {
+    border-top: 1px solid #333;
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1 style='text-align:center;'>Altara</h1>", unsafe_allow_html=True)
-st.markdown("<p class='subtext'>AI-Powered Investment Insights</p>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:center;color:#FFD369;'>Altara</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#8B949E;'>AI-Powered Investment Intelligence</p>", unsafe_allow_html=True)
 
 # --- Helper Functions ---
 def get_finnhub(endpoint, params=None):
@@ -76,13 +69,13 @@ def get_insider_activity(ticker):
 def get_sentiment(ticker):
     data = get_finnhub("news-sentiment", {"symbol": ticker})
     score = data.get("companyNewsScore")
-    return f"News Sentiment Score: {round(score, 2)} (scale: 0–1)" if score else "No sentiment data available."
+    return f"{round(score, 2)}" if score else "N/A"
 
 def get_news(ticker):
     url = f"https://newsapi.org/v2/everything?q={ticker}&sortBy=publishedAt&language=en&pageSize=10&apiKey={NEWS_API_KEY}"
     articles = requests.get(url).json().get("articles", [])
     relevant = [a["title"] for a in articles if ticker.upper() in a["title"].upper()]
-    return relevant[:5] if relevant else [a["title"] for a in articles[:5]]
+    return relevant[:3] if relevant else [a["title"] for a in articles[:3]]
 
 def ask_assistant(prompt):
     thread = client.beta.threads.create()
@@ -95,12 +88,12 @@ def ask_assistant(prompt):
             return "⚠️ Assistant failed."
         time.sleep(1)
     msg = client.beta.threads.messages.list(thread_id=thread.id).data[0]
-    return re.sub(r"[\\*_`]", "", msg.content[0].text.value).strip()
+    return msg.content[0].text.value.strip()
 
 def tech_chart(hist):
     hist["MA7"] = hist["Close"].rolling(7).mean()
     hist["MA30"] = hist["Close"].rolling(30).mean()
-    fig, ax = plt.subplots(figsize=(7, 4))
+    fig, ax = plt.subplots(figsize=(6, 3.5))
     ax.plot(hist.index, hist["Close"], label="Close", linewidth=2)
     ax.plot(hist.index, hist["MA7"], label="7D MA", linestyle="--")
     ax.plot(hist.index, hist["MA30"], label="30D MA", linestyle=":")
@@ -118,21 +111,21 @@ def summary_panel(info):
     st.markdown("<div class='section'>", unsafe_allow_html=True)
     st.markdown("### 📋 Stock Summary")
     cols = st.columns(2)
-    cols[0].markdown(f"- **Price:** ${info.get('currentPrice','N/A')}")
-    cols[0].markdown(f"- **Volume:** {info.get('volume','N/A')}")
-    cols[0].markdown(f"- **P/E Ratio:** {info.get('trailingPE','N/A')}")
-    cols[0].markdown(f"- **Market Cap:** {info.get('marketCap','N/A')}")
-    cols[1].markdown(f"- **52W High:** ${info.get('fiftyTwoWeekHigh','N/A')}")
-    cols[1].markdown(f"- **52W Low:** ${info.get('fiftyTwoWeekLow','N/A')}")
+    cols[0].markdown(f"**Price:** ${info.get('currentPrice','N/A')}")
+    cols[0].markdown(f"**Volume:** {info.get('volume','N/A')}")
+    cols[0].markdown(f"**P/E Ratio:** {info.get('trailingPE','N/A')}")
+    cols[0].markdown(f"**Market Cap:** {info.get('marketCap','N/A')}")
+    cols[1].markdown(f"**52W High:** ${info.get('fiftyTwoWeekHigh','N/A')}")
+    cols[1].markdown(f"**52W Low:** ${info.get('fiftyTwoWeekLow','N/A')}")
     st.markdown("</div>", unsafe_allow_html=True)
 
 # --- UI Input ---
 st.markdown("<div class='section'>", unsafe_allow_html=True)
 st.markdown("### 📈 Analyze a Stock")
-ticker = st.text_input("Enter Stock Symbol (ex. AAPL, TSLA, VOO)").upper()
+ticker = st.text_input("Enter Stock Symbol (e.g., AAPL)").upper()
 st.markdown("</div>", unsafe_allow_html=True)
 
-# --- On Click ---
+# --- Main Action ---
 if st.button("Run Analysis") and ticker:
     stock = yf.Ticker(ticker)
     hist = stock.history(period="2mo")
@@ -150,23 +143,39 @@ if st.button("Run Analysis") and ticker:
         news = get_news(ticker)
 
         prompt = f"""
-Analyze this stock:
+You are a financial AI assistant generating a clear investment recommendation for a stock based on the following structured input:
 
-Ticker: {ticker}
+Stock: {ticker}
 Price: ${info.get("currentPrice","N/A")}
-Volume: {info.get("volume","N/A")}
-Market Cap: {info.get("marketCap","N/A")}
-52W High/Low: ${info.get("fiftyTwoWeekHigh","N/A")} / ${info.get("fiftyTwoWeekLow","N/A")}
 7D MA: {ma7:.2f}, 30D MA: {ma30:.2f}
-7D Change: {pct}%
+7D % Change: {pct}
+P/E Ratio: {info.get("trailingPE", "N/A")}
+Market Cap: {info.get("marketCap", "N/A")}
+52W High: {info.get("fiftyTwoWeekHigh", "N/A")}
+52W Low: {info.get("fiftyTwoWeekLow", "N/A")}
+Volume: {info.get("volume", "N/A")}
+
 Analyst Ratings: {rating}
 Insider Activity: {insider}
-Sentiment: {sentiment}
-News:
-- {'\\n- '.join(news)}
+Sentiment Score: {sentiment}
+
+Recent News:
+- {news[0] if len(news) > 0 else ""}
+- {news[1] if len(news) > 1 else ""}
+- {news[2] if len(news) > 2 else ""}
+
+Please provide a structured analysis with these 5 clearly labeled sections (use markdown formatting with bold headings):
+
+1. **📊 Overall Sentiment**
+2. **📉 Technical Analysis**
+3. **🧠 Analyst + Insider Summary**
+4. **📰 News Impact**
+5. **✅ Final Recommendation**
+
+Each section should be concise, visually readable, and formatted in bullet points where possible.
 """
 
-        with st.spinner("🧠 Generating AI Insights..."):
+        with st.spinner("Analyzing with AI..."):
             response = ask_assistant(prompt)
 
         summary_panel(info)
