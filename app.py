@@ -5,18 +5,17 @@ from openai import OpenAI
 import matplotlib.pyplot as plt
 import pandas as pd
 import time
-import re
 from matplotlib.dates import DateFormatter
 
 st.set_page_config(page_title="Altara", page_icon="📈", layout="wide")
 
-# API keys
+# --- API Keys ---
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 FINNHUB_KEY = st.secrets["FINNHUB_API_KEY"]
 NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
 ASSISTANT_ID = st.secrets["ASSISTANT_ID"]
 
-# --- Modern Premium Styling ---
+# --- Styling ---
 st.markdown("""
 <style>
 html, body, [class*="css"] {
@@ -31,10 +30,7 @@ html, body, [class*="css"] {
     margin-bottom: 2rem;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
 }
-h3 {
-    color: #1A3C63;
-    margin-bottom: 1rem;
-}
+h3 { color: #1A3C63; margin-bottom: 1rem; }
 hr {
     border: none;
     border-top: 1px solid #D1D5DB;
@@ -57,7 +53,7 @@ st.markdown("""
 <hr />
 """, unsafe_allow_html=True)
 
-# === Helper Functions ===
+# --- Helper Functions ---
 def get_finnhub(endpoint, params=None):
     url = f"https://finnhub.io/api/v1/{endpoint}"
     params = params or {}
@@ -134,80 +130,64 @@ def summary_panel(info):
 def get_sp500_gainers_losers():
     url = f"https://finnhub.io/api/v1/screener?exchange=US&marketCapitalizationMoreThan=10000&token={FINNHUB_KEY}"
     data = requests.get(url).json().get("data", [])
-    gainers = []
-    losers = []
-    for stock in data:
+    gainers, losers = [], []
+    for s in data:
         try:
-            change = float(stock.get("change", 0))
-            if change > 0:
-                gainers.append(stock)
-            elif change < 0:
-                losers.append(stock)
-        except:
-            continue
-    top_gainers = sorted(gainers, key=lambda x: float(x.get("change", 0)), reverse=True)[:5]
-    top_losers = sorted(losers, key=lambda x: float(x.get("change", 0)))[:5]
-    return top_gainers, top_losers
+            chg = float(s.get("change", 0))
+            (gainers if chg > 0 else losers).append(s)
+        except: continue
+    return sorted(gainers, key=lambda x: float(x["change"]), reverse=True)[:5], sorted(losers, key=lambda x: float(x["change"]))[:5]
 
-def get_top_performers(timeframe='1d'):
+def get_top_performers(tf="1d"):
     tickers = ["AAPL", "MSFT", "GOOGL", "NVDA", "TSLA", "AMZN", "META", "NFLX", "AMD", "INTC"]
-    results = []
+    res = []
     for t in tickers:
         try:
-            hist = yf.Ticker(t).history(period='1mo' if timeframe == '1mo' else '7d' if timeframe == '1w' else '1d')
-            if len(hist) >= 2:
-                change = (hist['Close'][-1] - hist['Close'][0]) / hist['Close'][0] * 100
-                volume = hist['Volume'][-1]
-                results.append((t, change, volume))
-        except:
-            continue
-    return sorted(results, key=lambda x: x[1], reverse=True)
+            h = yf.Ticker(t).history(period="1mo" if tf=="1mo" else "7d" if tf=="1w" else "1d")
+            if len(h) >= 2:
+                chg = (h["Close"][-1] - h["Close"][0]) / h["Close"][0] * 100
+                res.append((t, chg, h["Volume"][-1]))
+        except: continue
+    return sorted(res, key=lambda x: x[1], reverse=True)
 
 def display_featured_section():
     st.markdown("<div class='section'>", unsafe_allow_html=True)
     st.markdown("### 🌟 Featured Sections")
 
     gainers, losers = get_sp500_gainers_losers()
-    st.markdown("#### 📈 Top Movers (S&P 500 / Nasdaq)")
-    cols = st.columns(2)
-    with cols[0]:
+    st.markdown("#### 📈 Top Movers")
+    c1, c2 = st.columns(2)
+    with c1:
         st.markdown("**Top Gainers**")
         for g in gainers:
-            st.markdown(f"- **{g['symbol']}** ({g.get('sector', 'N/A')}): {g['change']}% | Vol: {g.get('volume', 'N/A')}")
-    with cols[1]:
+            st.markdown(f"- **{g['symbol']}** ({g.get('sector','N/A')}): {g['change']}% | Vol: {g.get('volume','N/A')}")
+    with c2:
         st.markdown("**Top Losers**")
         for l in losers:
-            st.markdown(f"- **{l['symbol']}** ({l.get('sector', 'N/A')}): {l['change']}% | Vol: {l.get('volume', 'N/A')}")
+            st.markdown(f"- **{l['symbol']}** ({l.get('sector','N/A')}): {l['change']}% | Vol: {l.get('volume','N/A')}")
 
-    st.markdown("#### ⏱️ Top Performing Stocks")
-    timeframe = st.selectbox("Filter By", ["1d", "1w", "1mo"], index=0, format_func=lambda x: {"1d": "Daily", "1w": "Weekly", "1mo": "Monthly"}[x])
-    performers = get_top_performers(timeframe)
-    df = pd.DataFrame(performers, columns=["Ticker", "% Change", "Volume"])
+    st.markdown("#### ⏱️ Top Performers")
+    tf = st.selectbox("Timeframe", ["1d", "1w", "1mo"], format_func=lambda x: {"1d": "Daily", "1w": "Weekly", "1mo": "Monthly"}[x])
+    top = get_top_performers(tf)
+    df = pd.DataFrame(top, columns=["Ticker", "% Change", "Volume"])
     st.dataframe(df.set_index("Ticker").style.format({"% Change": "{:.2f}%"}), use_container_width=True)
 
-    st.markdown("#### 🤖 Altara’s Top AI-Picked Stocks")
-    ai_prompt = \"""
-You are a financial AI assistant. Based on current market data, news sentiment, and stock performance, list 3–5 U.S. stocks that are strong buys right now.
-
-Prioritize:
-- Strong buy analyst ratings
-- Bullish sentiment
-- Recent volume or performance spikes
-
-Format each stock like:
-
-**[TICKER] – Company Name**
-- Reason 1
-- Reason 2
-- Reason 3
-\"""
-    ai_output = ask_assistant(ai_prompt)
-    st.markdown(ai_output)
+    st.markdown("#### 🤖 AI-Picked Stocks")
+    prompt = (
+        "List 3-5 US stocks that show strong buy potential based on:\n"
+        "- Analyst buy ratings\n"
+        "- Bullish sentiment\n"
+        "- Volume or price surge\n\n"
+        "Format:\n"
+        "**[TICKER] – Company Name**\n"
+        "- Reason 1\n- Reason 2\n- Reason 3"
+    )
+    st.markdown(ask_assistant(prompt))
     st.markdown("</div>", unsafe_allow_html=True)
 
 display_featured_section()
 
-# === Stock Analysis Input ===
+# === Stock Analysis ===
 st.markdown("<div class='section'>", unsafe_allow_html=True)
 st.markdown("### 📈 Analyze a Stock")
 ticker = st.text_input("Enter Stock Symbol (ex. AAPL, TSLA)").upper()
@@ -229,36 +209,20 @@ if st.button("Run Analysis") and ticker:
         sentiment = get_sentiment(ticker)
         news = get_news(ticker)
 
-        prompt = f"""
-Stock: {ticker}
-Price: ${info.get("currentPrice","N/A")}
-7D MA: {ma7:.2f}, 30D MA: {ma30:.2f}
-7D % Change: {pct}
-P/E Ratio: {info.get("trailingPE", "N/A")}
-Market Cap: {info.get("marketCap", "N/A")}
-52W High: {info.get("fiftyTwoWeekHigh", "N/A")}
-52W Low: {info.get("fiftyTwoWeekLow", "N/A")}
-Volume: {info.get("volume", "N/A")}
-Analyst Ratings: {rating}
-Insider Activity: {insider}
-Sentiment Score: {sentiment}
-Recent News:
-- {news[0] if len(news) > 0 else ""}
-- {news[1] if len(news) > 1 else ""}
-- {news[2] if len(news) > 2 else ""}
+        prompt = (
+            f"Stock: {ticker}\nPrice: ${info.get('currentPrice')}\n"
+            f"7D MA: {ma7:.2f}, 30D MA: {ma30:.2f}\n"
+            f"7D % Change: {pct}\nP/E: {info.get('trailingPE')}, Market Cap: {info.get('marketCap')}\n"
+            f"52W High: {info.get('fiftyTwoWeekHigh')}, Low: {info.get('fiftyTwoWeekLow')}, Vol: {info.get('volume')}\n"
+            f"Ratings: {rating}, Insider: {insider}, Sentiment: {sentiment}\n"
+            f"News: {news}\n\n"
+            "Respond with 5 sections: Overall Sentiment, Technicals, Analyst+Insider, News, Final Recommendation"
+        )
 
-Give 5 sections:
-1. **📊 Overall Sentiment**
-2. **📉 Technical Analysis**
-3. **🧠 Analyst + Insider Summary**
-4. **📰 News Impact**
-5. **✅ Final Recommendation**
-"""
         with st.spinner("Analyzing with Altara..."):
             response = ask_assistant(prompt)
 
         summary_panel(info)
-
         st.markdown("<div class='section'>", unsafe_allow_html=True)
         st.markdown("### 💬 Altara Recommendation")
         st.markdown(response)
