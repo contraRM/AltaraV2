@@ -19,7 +19,7 @@ ASSISTANT_ID = st.secrets["ASSISTANT_ID"]
 st.markdown("""
 <style>
 html, body, [class*="css"] {
-    background-color: #F4F7FA;
+    background-color: #294873;
     color: #0A1D37;
     font-family: 'Segoe UI', sans-serif;
 }
