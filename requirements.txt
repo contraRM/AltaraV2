@@ -7,3 +7,4 @@ numpy
 requests
 statsmodels
 scikit-learn
+lxml
