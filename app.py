@@ -128,15 +128,26 @@ def summary_panel(info):
 
 # === Featured Sections ===
 def get_sp500_gainers_losers():
-    url = f"https://finnhub.io/api/v1/screener?exchange=US&marketCapitalizationMoreThan=10000&token={FINNHUB_KEY}"
-    data = requests.get(url).json().get("data", [])
+    sp500 = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")[0]["Symbol"].tolist()[:100]
     gainers, losers = [], []
-    for s in data:
+    for symbol in sp500:
         try:
-            chg = float(s.get("change", 0))
-            (gainers if chg > 0 else losers).append(s)
+            data = yf.Ticker(symbol).history(period="2d")
+            if len(data) < 2: continue
+            prev, curr = data["Close"].iloc[0], data["Close"].iloc[1]
+            change = round((curr - prev) / prev * 100, 2)
+            info = yf.Ticker(symbol).info
+            entry = {
+                "symbol": symbol,
+                "change": change,
+                "volume": info.get("volume", "N/A"),
+                "sector": info.get("sector", "N/A")
+            }
+            (gainers if change > 0 else losers).append(entry)
         except: continue
-    return sorted(gainers, key=lambda x: float(x["change"]), reverse=True)[:5], sorted(losers, key=lambda x: float(x["change"]))[:5]
+    gainers = sorted(gainers, key=lambda x: x["change"], reverse=True)[:5]
+    losers = sorted(losers, key=lambda x: x["change"])[:5]
+    return gainers, losers
 
 def get_top_performers(tf="1d"):
     tickers = ["AAPL", "MSFT", "GOOGL", "NVDA", "TSLA", "AMZN", "META", "NFLX", "AMD", "INTC"]
